@@ -110,7 +110,10 @@ class SimpleMultiheadAttention(nn.Module):
         super().__init__()
         self.d_model, self.nhead = d_model, nhead
         self.head_dim = d_model // nhead
-        self.q_proj, self.k_proj, self.v_proj, self.out_proj = [nn.Linear(d_model, d_model) for _ in range(4)]
+        self.q_proj = nn.Linear(d_model, d_model)
+        self.k_proj = nn.Linear(d_model, d_model)
+        self.v_proj = nn.Linear(d_model, d_model)
+        self.out_proj = nn.Linear(d_model, d_model)
         self.dropout = dropout
 
     def forward(self, query, key, value, attn_mask=None, key_padding_mask=None):
@@ -132,3 +135,23 @@ class SimpleMultiheadAttention(nn.Module):
 
         out = F.scaled_dot_product_attention(q, k, v, attn_mask=bool_mask, dropout_p=self.dropout if self.training else 0.0)
         return (self.out_proj(out.transpose(1, 2).contiguous().view(batch, q_len, self.d_model)), None)
+
+try:
+    from performer_pytorch import Performer
+
+    class PerformerDecoderWrapper(torch.nn.Module):
+        def __init__(self, d_model, n_heads, num_layers, d_ff, dropout=0.1):
+            super().__init__()
+            self.performer = Performer(
+                dim=d_model,
+                depth=num_layers,
+                heads=n_heads,
+                dim_head=d_model // n_heads,
+                causal=True,
+                cross_attend=True,
+                ff_mult=d_ff // d_model
+            )
+        def forward(self, tgt, memory, tgt_mask=None, tgt_key_padding_mask=None, memory_key_padding_mask=None):
+            return self.performer(tgt, context=memory, mask=~tgt_key_padding_mask if tgt_key_padding_mask is not None else None, context_mask=~memory_key_padding_mask if memory_key_padding_mask is not None else None)
+except ImportError:
+    pass
